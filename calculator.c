@@ -37,13 +37,31 @@ int parseToken(char** str, Token** token) {
 		return 1;
 
 	case '+':
+		(*token)->type = PLUS;
+		++(*str);
+		break;
 	case '-':
+		(*token)->type = MINUS;
+		++(*str);
+		break;
 	case '*':
+		(*token)->type = MUL;
+		++(*str);
+		break;
 	case '/':
+		(*token)->type = DIV;
+		++(*str);
+		break;
 	case '^':
+		(*token)->type = POW;
+		++(*str);
+		break;
 	case '(':
+		(*token)->type = LP;
+		++(*str);
+		break;
 	case ')':
-		(*token)->type = static_cast<TokenType> (**str);
+		(*token)->type = RP;
 		++(*str);
 		break;
 
@@ -73,8 +91,9 @@ int parseToken(char** str, Token** token) {
 
 Token* lexer(char** str) {
 	Token* first;
+	Token* current;
 	parseToken(str, &first);
-	Token* current = first;
+	current = first;
 	while (current) {
 		Token* next;
 		if (!parseToken(str, &next)) {
@@ -120,9 +139,10 @@ Token* parsePrimary(Token* token) {
 }
 
 Token* parsePow(Token* lhs) {
+	Token* token;
 	lhs = parsePrimary(lhs);
 	if (!lhs) return NULL;
-	Token* token = lhs->next;
+	token = lhs->next;
 	if (token && token->type == POW) {
 		Token* rhs = parsePow(token->next);
 		if (!rhs) return NULL;
@@ -229,13 +249,13 @@ double eval(char* str, double* res) {
 }
 
 int main() {
-	setlocale(LC_ALL, "Russian");
 	char str[256];
-	while (1) {
+	setlocale(LC_ALL, "Russian");	
+	while (1) {		
+		double result;
 		printf("Введите выражение: \n(\"exit\" для выхода)\n");
 		fgets(str, sizeof(str), stdin);
 		if (strcmp(str, "exit\n") == 0) break;
-		double result;
 		if (eval(str, &result)) {
 			printf("Результат: %lf\n", result);
 		}
