@@ -4,25 +4,49 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum TokenType {
+typedef enum {
 	NUMBER = 'N', LOG = 'L',
 	PLUS = '+', MINUS = '-',
 	MUL = '*', DIV = '/',
 	POW = '^', LP = '(',
-	RP = ')'
-};
+	RP = ')', END = 'E'
+} TokenType;
 
 typedef struct _Token {
-	enum TokenType type;
+	TokenType type;
 	double value;
 	struct _Token* next;
 } Token;
 
+typedef enum {
+	NODE_NUMBER = 'N', OLOG = 'L',
+	OPLUS = '+', OMINUS = '-',
+	OMUL = '*', ODIV = '/',
+	OPOW = '^', UMINUS = 'M',
+	ERROR = 'E'
+} NodeType;
+
+typedef struct _AST {
+	NodeType type;
+	double value;
+	struct _AST* left;
+	struct _AST* right;
+} AST;
+
 void freeList(Token* token) {
-	while (token != NULL) {
+	while (token) {
 		Token* next = token->next;
 		free(token);
 		token = next;
+	}
+}
+void freeTree(AST* ast) {
+	if(ast){
+		if(ast->left)
+			freeTree(ast->left);
+		if(ast->right)
+			freeTree(ast->right);
+		free(ast);
 	}
 }
 
@@ -107,160 +131,228 @@ Token* lexer(char** str) {
 	return first;
 }
 
-Token* parseLog(Token* token);
-Token* parseExpression(Token* token);
+void nextToken(Token* token){
+	if(token->next){
+		token->type = token->next->type;
+		token->value = token->next->value;
+		token->next = token->next->next;
+	}
+	else
+		token->type = END;
 
-Token* parsePrimary(Token* token) {
-	if (!token) return NULL;
-	if (token->type == NUMBER) {
-		return token;
-	}
-	else if (token->type == MINUS) {
-		Token* next = token->next;
-		if (!next) return NULL;
-		if (next->type == LP) {
-			next = parseExpression(next);
-		}
-		else if (next->type == LOG) {
-			next = parseLog(next);
-		}
-		if (next && next->type == NUMBER) {
-			*token = *next;
-			token->value = -(token->value);
-			free(next);
-			return token;
-		}
-		else return NULL;
-	}
-	else if (token->type == LP) {
-		return parseExpression(token);
-	}
-	else return NULL;
+
 }
-
-Token* parsePow(Token* lhs) {
-	Token* token;
-	lhs = parsePrimary(lhs);
-	if (!lhs) return NULL;
-	token = lhs->next;
-	if (token && token->type == POW) {
-		Token* rhs = parsePow(token->next);
-		if (!rhs) return NULL;
-		lhs->type = NUMBER;
-		lhs->value = pow(lhs->value, rhs->value);
-		lhs->next = rhs->next;
-		free(token);
-		free(rhs);
-	}
-	return lhs;
+AST* makeNode(NodeType type, AST* left, AST* right){
+	AST* tmp;
+	tmp = (AST*)malloc(sizeof(AST));
+	tmp->type = type;
+	tmp->value = 0;
+	tmp->left = left;
+	tmp->right = right;
+	return tmp;
 }
+AST* makeNodeUnary(NodeType type, AST* left){
+	AST* tmp;
+	tmp = (AST*)malloc(sizeof(AST));
+	tmp->type = type;
+	tmp->value = 0;
+	tmp->left = left;
+	tmp->right = NULL;
+	return tmp;
+}
+AST* makeNodeNumber(double value){
+	AST* tmp;
+	tmp = (AST*)malloc(sizeof(AST));
+	tmp->type = NODE_NUMBER;
+	tmp->value = value;
+	tmp->left = NULL;
+	tmp->right = NULL;
+	return tmp;
+}
+AST* parseMul(Token* token);
+AST* parsePow(Token* token);
+AST* parseMul1(Token* token);
+AST* parsePow1(Token* token);
+AST* parseSum1(Token* token);
+AST* parseTerm(Token* token);
 
-Token* parseLog(Token* token) {
-	if (!token) return NULL;
-	if (token->type == LOG) {
-		Token* arg = parsePow(token->next);
-		if (!arg) return NULL;
-		token->type = NUMBER;
-		token->value = log(arg->value);
-		token->next = arg->next;
-		free(arg);
-		return token;
+AST* parseSum(Token* token) {
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	left = parseMul(token);
+	right = parseSum1(token);
+	return makeNode(OPLUS, left, right);
+}
+AST* parseSum1(Token* token) {
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	switch(token->type){
+	case PLUS:
+		nextToken(token);
+		left = parseMul(token);
+		right = parseSum1(token);
+		return makeNode(OPLUS, left, right);
+	case MINUS:
+		nextToken(token);
+		left = parseMul(token);
+		right = parseSum1(token);
+		return makeNode(OMINUS, left, right);
 	}
-	else {
-		return parsePow(token);
+	return makeNodeNumber(0);
+}
+AST* parseMul(Token* token){
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	left = parsePow(token);
+	right = parseMul1(token);
+	return makeNode(OMUL, left, right);
+}
+AST* parseMul1(Token* token) {	
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	switch(token->type){
+	case MUL:
+		nextToken(token);
+		left = parsePow(token);
+		right = parseMul1(token);
+		return makeNode(OMUL, left, right);
+	case DIV:
+		nextToken(token);
+		left = parsePow(token);
+		right = parseMul1(token);
+		return makeNode(ODIV, left, right);
+	}
+	return makeNodeNumber(1);
+}
+AST* parsePow(Token* token){
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	left = parseTerm(token);
+	right = parsePow1(token);
+	return makeNode(OPOW, left, right);
+}
+AST* parsePow1(Token* token){	
+	AST* left;
+	AST* right;
+	left = (AST*)malloc(sizeof(AST));
+	right = (AST*)malloc(sizeof(AST));
+	if(token->type == POW){
+		nextToken(token);
+		left = parseTerm(token);
+		right = parsePow1(token);
+		return makeNode(OPOW, left, right);
+	}
+	return makeNodeNumber(1);
+}
+AST* parseTerm(Token* token){
+	AST* tmp;
+	double value;
+	tmp = (AST*)malloc(sizeof(AST));	
+	switch(token->type){
+	case NUMBER:
+		value = token->value;
+		nextToken(token);
+		return makeNodeNumber(value);
+	case MINUS:
+		nextToken(token);
+		tmp = parseTerm(token);
+		return makeNodeUnary(UMINUS, tmp);
+	case LOG:
+		nextToken(token);
+		tmp = parseTerm(token);
+		return makeNodeUnary(OLOG, tmp);
+	case LP:
+		nextToken(token);
+		tmp = parseSum(token);
+		if(token->type != RP)
+			return makeNode(ERROR, NULL, NULL);
+		nextToken(token);
+		return tmp;
+	default:
+		nextToken(token);
+		return makeNode(ERROR, NULL, NULL);
 	}
 }
-
-Token* parseMul(Token* token) {
-	Token* lhs = parseLog(token);
-	if (!lhs) return NULL;
-	token = lhs->next;
-	if (token && (token->type == MUL || token->type == DIV)) {
-		Token* rhs = parseLog(token->next);
-		if (!rhs) return NULL;
-		lhs->type = NUMBER;
-		if (token->type == MUL) {
-			lhs->value = (lhs->value * rhs->value);
+double evaluate(AST* ast){
+	if(ast)
+		switch(ast->type){
+			case NODE_NUMBER:
+				return ast->value;
+			case UMINUS:
+				return -evaluate(ast->left);
+			case OLOG:
+				return log(evaluate(ast->left));
+			case OPLUS:
+				return evaluate(ast->left)+evaluate(ast->right);
+			case OMINUS:
+				return evaluate(ast->right)-evaluate(ast->left);
+			case OMUL:
+				return evaluate(ast->left)*evaluate(ast->right);
+			case ODIV:
+				return evaluate(ast->right)/evaluate(ast->left);
+			case OPOW:
+				return pow(evaluate(ast->left),evaluate(ast->right));
 		}
-		else {
-			lhs->value = (lhs->value / rhs->value);
-		}
-		lhs->next = rhs->next;
-		free(token);
-		free(rhs);
-		return parseMul(lhs);
-	}
-	else {
-		return lhs;
-	}
 }
-
-Token* parseSum(Token* token) {
-	Token* lhs = parseMul(token);
-	if (!lhs) return NULL;
-	token = lhs->next;
-	if (token && (token->type == PLUS || token->type == MINUS)) {
-		Token* rhs = parseMul(token->next);
-		if (!rhs) return NULL;
-		lhs->type = NUMBER;
-		if (token->type == PLUS) {
-			lhs->value = (lhs->value + rhs->value);
-		}
-		else {
-			lhs->value = (lhs->value - rhs->value);
-		}
-		lhs->next = rhs->next;
-		free(token);
-		free(rhs);
-		return parseSum(lhs);
-	}
-	else {
-		return lhs;
-	}
-}
-
-Token* parseExpression(Token* token) {
-	if (!token) return NULL;
-	if (token->type == LP) {
-		Token* result = parseSum(token->next);
-		if (!result || !(result->next)) return NULL;
-		token->type = result->type;
-		token->value = result->value;
-		token->next = result->next->next;
-		free(result->next);
-		free(result);
-	}
-	else {
-		token = parseSum(token);
-	}
-	return token;
-}
-
+int checkTree(AST* ast);
 double eval(char* str, double* res) {
+	AST* root;
+	double result;
 	Token* tokens = lexer(&str);
-	Token* result = parseExpression(tokens);
-	if (!result || result->type != NUMBER || result->next != NULL) {
-		freeList(tokens);
+	if(tokens == NULL)
 		return 0;
-	}
-	*res = result->value;
-	freeList(result);
+	root = parseSum(tokens);
+	if(checkTree(root))
+		return 0;
+	result = evaluate(root);	
+	freeTree(root);
+	freeList(tokens);
+	*res = result;
 	return 1;
+}
+
+int checkTree(AST* ast){
+	if(ast->type == ERROR)
+			return 1;
+		if((ast->type == OLOG) || (ast->type == UMINUS)){
+			if(ast->left == NULL)
+				return 1;
+			else if(checkTree(ast->left))
+				return 1;
+		}
+		else if(ast->type != NODE_NUMBER){
+			if((ast->left == NULL)||(ast->right == NULL))
+				return 1;
+			else if((checkTree(ast->left))||(checkTree(ast->right)))
+				return 1;
+		}
+		return 0;
 }
 
 int main() {
 	char str[256];
+	double result;
 	setlocale(LC_ALL, "Russian");	
-	while (1) {		
-		double result;
+	while(1){
 		printf("Введите выражение: \n(\"exit\" для выхода)\n");
 		fgets(str, sizeof(str), stdin);
-		if (strcmp(str, "exit\n") == 0) break;
+		if (strcmp(str, "exit\n") == 0) 
+			break;
 		if (eval(str, &result)) {
 			printf("Результат: %lf\n", result);
 		}
 		else {
 			puts("Некорректный ввод");
 		}
-	}
+	}	
 }
